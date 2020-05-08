@@ -18,6 +18,7 @@ config.read('static/utils/carriers.config')
 
 class BirdNest(db.Model):
     id = db.Column(db.Integer, primary_key = True)
+    nest_num = db.Column(db.Integer)
     nest_id = db.Column(db.String(256))
     species = db.Column(db.String(256), nullable=False)
     buffer_ft = db.Column(db.Integer, nullable=False)
@@ -48,14 +49,16 @@ class BirdNest(db.Model):
     def __repr__(self):
         return f'Report #{self.id}'
 
-gc = gspread.service_account(filename = './config/tnc205-auto-upload-a97fe4207469.json')
+@app.route('/')
+def index():
+    return ({200: "OK"}, 200)
 
 @app.route('/run')
 def run_functions():
     token = generate_access_token()
     survey_layer = "https://services8.arcgis.com/h6nuPWXA0cJVXvVl/arcgis/rest/services/service_b73efc4d3c0f412f951a910e4aed1558/FeatureServer/0/"
     buffer_layer = "https://services8.arcgis.com/h6nuPWXA0cJVXvVl/arcgis/rest/services/scr_nest_buffer_2020/FeatureServer/0/"           
-    
+    added = []
     try:
         update_buffers(token, survey_layer, buffer_layer)
     except Exception as e:
@@ -65,7 +68,11 @@ def run_functions():
         return ({404: "No survey features found"}, 404)
     else:
         survey_features = survey_features['features']
-    sh = gc.open("TNC205AutoUpload").sheet1
+    try:
+        gc = gspread.service_account(filename = './config/tnc205-auto-upload-a97fe4207469.json')
+        sh = gc.open("TNC205AutoUpload").sheet1
+    except Exception as e:
+        return ({500: e}, 500)
     num_rows = len(sh.col_values(1))
     for feature in survey_features:
         attr = feature['attributes']
@@ -73,7 +80,7 @@ def run_functions():
         e_date = attr['EditDate']
         if type(e_date) == int:
             e_date = datetime.fromtimestamp(e_date/1000)
-        search_result = BirdNest.query.filter(BirdNest.id == attr['objectid'], BirdNest.EditDate == e_date).first()
+        search_result = BirdNest.query.filter(BirdNest.nest_num == attr['objectid'], BirdNest.EditDate == e_date).first()
         if search_result:
             continue
         species = attr['species']
@@ -102,7 +109,7 @@ def run_functions():
         if type(a_date) == int:
             a_date = datetime.fromtimestamp(a_date/1000)
         new_nest_entry = BirdNest(
-            id = attr['objectid'],
+            nest_num = attr['objectid'],
             nest_id = attr['nest_id'],
             species = species,
             buffer_ft = attr['buffer_ft'],
@@ -146,8 +153,12 @@ def run_functions():
         vals.append(attr['fenced_or_marked'])
         if a_date:
             vals.append(a_date.strftime("%m/%d/%Y, %H:%M"))
+        else:
+            vals.append('')
         if o_date:
             vals.append(o_date.strftime("%m/%d/%Y, %H:%M"))
+        else:
+            vals.append('')
         vals.append(attr['project_area'])
         vals.append(str(geo))
         vals.append('')
@@ -162,13 +173,19 @@ def run_functions():
         vals.append(attr['accuracy'])
         if c_date:
             vals.append(c_date.strftime("%m/%d/%Y, %H:%M"))
+        else:
+            vals.append('')
         if e_date:
             vals.append(e_date.strftime("%m/%d/%Y, %H:%M"))
+        else:
+            vals.append('')
         vals.append(attr['Creator'])
         vals.append(attr['Editor'])
         
         num_rows += 1
         sh.update(f"A{num_rows}:AA{num_rows}", [vals])
+        added.append(vals)
+    return ({200: added}, 200)
 
 if __name__ == "__main__":
     app.run(debug=False)
