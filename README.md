@@ -2,7 +2,7 @@
 auto_buffer_arcgis
 
 Python app that uses the ArcGIS Online REST API to automatically buffer Survey123 and Collecor entries when called by web hook. Flask app not included.
-It also logs any changes to the geodatabase.
+It also logs any changes to the geodatabase to a Google Sheet.
 
 I created a flask app to run this program whenever any HTML request is sent to example.com/run.
 
