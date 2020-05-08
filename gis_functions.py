@@ -94,7 +94,7 @@ def query_layer(token, layer, where):
     response = requests.request("POST", query_url, headers=headers, data = payload)
     return response.json()
 
-def delete_all_buffers(buffer_layer):
+def delete_all_buffers(token, buffer_layer):
     buffers = query_layer(token, buffer_layer, "1=1")['features']
     for buffer_ in buffers:
         OID = buffer_["attributes"]['OBJECTID']
