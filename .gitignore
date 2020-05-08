@@ -1,3 +1,8 @@
 env/**
 tnc205.db
-info.config
+tnc205.code-workspace
+generate_access_token.py
+.DS_Store
+__pycache__
+.vscode
+config/*
