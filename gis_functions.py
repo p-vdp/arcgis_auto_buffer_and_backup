@@ -1,34 +1,30 @@
-import os
-from datetime import datetime
 import requests
 import urllib.parse
-from generate_access_token import generate_access_token
 
 def update_buffers(token, survey_layer, buffer_layer):
-    points = query_layer(token, survey_layer, "1=1")
     try:
-        points = points['features']
+        points = query_layer(token, survey_layer, "1=1")['features']
+        buffers = query_layer(token, buffer_layer, f"1=1")['features']
     except Exception as e:
         return ({500: e}, 500)
-    buffers = query_layer(token, buffer_layer, f"1=1")
-    try:
-        buffers = buffers['features']
-    except Exception as e:
-        return ({500: e}, 500)
+    deleted_buffers = 0
+    added_buffers = 0
     buffer_ids = {}
     for buffer_ in buffers:
-        attr = buffer_['attributes']
-        buffer_ids[attr['ORIG_FID']] = [attr['observation_date'], attr['OBJECTID']]
-    ok_buffers = []
+        buffer_attr = buffer_['attributes']
+        buffer_ids[buffer_attr['ORIG_FID']] = [buffer_attr['EditDate'], buffer_attr['OBJECTID']]
+    
+    keep_buffers = []
     new_buffers = []
+
     for point in points:
         survey_attributes = point['attributes']
         if survey_attributes['objectid'] in buffer_ids:
-            ok_buffers.append(buffer_ids[survey_attributes['objectid']][1])
-            if buffer_ids[survey_attributes['objectid']][0] == survey_attributes['observation_date']:
+            a = buffer_ids[survey_attributes['objectid']][0] - (buffer_ids[survey_attributes['objectid']][0]%1000)
+            b = survey_attributes['EditDate'] - (survey_attributes['EditDate']%1000)
+            if a == b:
+                keep_buffers.append(buffer_ids[survey_attributes['objectid']][1])
                 continue
-            else:
-                delete_feature(token, buffer_layer,buffer_ids[survey_attributes['objectid']][1])
         if (survey_attributes['buffer_ft'] == 0) or (not survey_attributes['buffer_ft']) or (survey_attributes['nest_status'] not in ['active','Active']):
             continue
         attributes = {}        
@@ -49,14 +45,17 @@ def update_buffers(token, survey_layer, buffer_layer):
             }
         }
         new_buffers.append(new_buffer)
+        added_buffers += 1
     all_buffers = query_layer(token, buffer_layer,"1=1")['features']
     for buffer_ in all_buffers:
-        if buffer_['attributes']['OBJECTID'] in ok_buffers:
+        if buffer_['attributes']['OBJECTID'] in keep_buffers:
             continue
         else:
             delete_feature(token, buffer_layer, buffer_['attributes']['OBJECTID'])
+            deleted_buffers += 1
     if len(new_buffers) > 0:
         add_feature_to_layer(token, buffer_layer, new_buffers)
+    return [deleted_buffers, added_buffers]
 
 def create_buffer_polygon_geometry(x,y,distance,f='json',inSr='4326',unit='9002'):
     # inSr means Spatial Reference. 4326 is standard
@@ -78,7 +77,7 @@ def add_feature_to_layer(token, layer, feature_info):
 
 def delete_feature(token, layer, oid):
     deletes_url = layer + 'applyEdits'
-    url = "https://services8.arcgis.com/h6nuPWXA0cJVXvVl/arcgis/rest/services/scr_nest_buffer_2020/FeatureServer/0/applyEdits"
+    url = layer + "applyEdits"
     payload = f'f=json&token={token}&deletes={oid}'
     headers = {'Content-Type': 'application/x-www-form-urlencoded'}
     response = requests.request("POST", url, headers=headers, data = payload)
@@ -88,7 +87,6 @@ def delete_feature(token, layer, oid):
 def query_layer(token, layer, where):
     where = urllib.parse.quote(where)
     query_url = layer + 'query'
-    # where = where.escape()
     payload = f'f=json&token={token}&where={where}&outSr=4326&outFields=*'
     headers = {'Content-Type': 'application/x-www-form-urlencoded'}
     response = requests.request("POST", query_url, headers=headers, data = payload)
